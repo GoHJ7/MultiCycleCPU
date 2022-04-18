@@ -32,7 +32,15 @@ module CPU(input reset,       // positive reset signal
   // Do not modify and use registers declared above.
   //reg update
   always @(posedge clk) begin
+    if(reset)begin
+    IR<=32'b0;
+    MDR<=32'b0;
+    A<=32'b0;
+    B<=32'b0;
+    ALUOUT<=32'b0;
+    end
     //IR
+    else begin
     if(IRWrite)begin
       IR <= MemData;
     end
@@ -43,9 +51,10 @@ module CPU(input reset,       // positive reset signal
     //A
     A <= rs1_dout;
     //B
-    b <= rs2_dout;
+    B <= rs2_dout;
     //ALUOUT
     ALUOut <= alu_result;
+    end
   end
   //mux
   wire [31:0] mux1out;
@@ -85,7 +94,7 @@ module CPU(input reset,       // positive reset signal
   // ---------- Update program counter ----------
   // PC must be updated on the rising edge (positive edge) of the clock.
   wire bcond_and_PCWNC,PCW_or_BAPCWNC;
-  assign bcond_and_PCWNC = bcond & PCWriteNotCond;
+  assign bcond_and_PCWNC = (bcond? 0: 1) & PCWriteNotCond;
   assign PCW_or_BAPCWNC = PCWrite | bcond_and_PCWNC;
   PC pc(
     .reset(reset),       // input (Use reset to initialize PC. Initial value must be 0)
@@ -137,10 +146,15 @@ module CPU(input reset,       // positive reset signal
   reg [3:0] statereg;
   wire S3, S2, S1, S0, N3, N2, N1, N0;
   always @(posedge clk) begin
+      if(reset)begin
+      statereg<=4'b0;
+      end
+      else begin
       statereg[0] <= N0;
       statereg[1] <= N1;
       statereg[2] <= N2;
       statereg[3] <= N3;
+      end
   end
   assign S0 = statereg[0];
   assign S1 = statereg[1];
@@ -163,7 +177,8 @@ module CPU(input reset,       // positive reset signal
     .MemtoReg(MemtoReg),//output
     .ALUOp(ALUOp),       // output 
     .S3(S3), .S2(S2), .S1(S1), .S0(S0), .N3(N3), .N2(N2), .N1(N1), .N0(N0),
-    .is_halted(is_ecall)
+    .is_halted(is_ecall),
+    .bcond(bcond)
   );
 
   // ---------- Immediate Generator ----------
