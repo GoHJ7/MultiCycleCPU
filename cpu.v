@@ -30,46 +30,95 @@ module CPU(input reset,       // positive reset signal
   reg [31:0] B; // Read 2 data register
   reg [31:0] ALUOut; // ALU output register
   // Do not modify and use registers declared above.
-
+  //reg update
+  always @(posedge clk) begin
+    //IR
+    if(IRWrite)begin
+      IR <= MemData;
+    end
+    else begin
+    end
+    //MDR
+    MDR <= MemData;
+    //A
+    A <= rs1_dout;
+    //B
+    b <= rs2_dout;
+    //ALUOUT
+    ALUOut <= alu_result;
+  end
   //mux
   wire [31:0] mux1out;
-  Mux2 mux1(
+  Mux2 mux1d(
     .signal(IorD),
     .sig1(current_pc),
     .sig0(ALUOut),
     .out(mux1out)
-  )
+  );
+  wire [31:0] mux2out;
+  Mux2 mux2(
+    .signal(ALUsrcA),
+    .sig1(A),
+    .sig0(current_pc),
+    .out(mux2out)
+  );
+  wire[31:0] mux3out;
+  Mux2 mux3(
+    .signal(MemtoReg),
+    .sig1(MDR),
+    .sig0(ALUOut),
+    .out(mux3outs)
+  );
+  Mux4 mux4(
+    .signal(ALUSrcB),
+    .sig3(0),
+    .sig2(imm_gen_out),
+    .sig1(32'b4),
+    .sig0(B)
+  );
+  Mux2 mux5(
+    .signal(PCsource),
+    .sig1(ALUOut),
+    .sig0(alu_result),
+    .out(next_pc)
+  );
   // ---------- Update program counter ----------
   // PC must be updated on the rising edge (positive edge) of the clock.
+  wire bcond_and_PCWNC,PCW_or_BAPCWNC;
+  assign bcond_and_PCWNC = bcond & PCWriteNotCond;
+  assign PCW_or_BAPCWNC = PCWrite | bcond_and_PCWNC;
   PC pc(
-    .reset(),       // input (Use reset to initialize PC. Initial value must be 0)
-    .clk(),         // input
-    .next_pc(),     // input
-    .current_pc()   // output
+    .reset(reset),       // input (Use reset to initialize PC. Initial value must be 0)
+    .clk(clk),         // input
+    .next_pc(next_pc),     // input
+    .current_pc(current_pc),   // output
+    .pc_sig(PCW_or_BAPCWNC)
   );
 
   // ---------- Register File ----------
+  wire [31:0] rs1_dout,rs2_dout;
   RegisterFile reg_file(
-    .reset(),        // input
-    .clk(),          // input
-    .rs1(),          // input
-    .rs2(),          // input
-    .rd(),           // input
-    .rd_din(),       // input
-    .write_enable(),    // input
-    .rs1_dout(),     // output
-    .rs2_dout()      // output
+    .reset(reset),        // input
+    .clk(clk),          // input
+    .rs1(IR[19:15]),          // input
+    .rs2(IR[24:20]),          // input
+    .rd(IR[11:7]),           // input
+    .rd_din(mux3out),       // input
+    .write_enable(RegWrite),    // input
+    .rs1_dout(rs1_dout),     // output
+    .rs2_dout(rs2_dout)      // output
   );
 
   // ---------- Memory ----------
+  wire [31:0] MemData;
   Memory memory(
-    .reset(),        // input
-    .clk(),          // input
-    .addr(),         // input
-    .din(),          // input
-    .mem_read(),     // input
-    .mem_write(),    // input
-    .dout()          // output
+    .reset(reset),        // input
+    .clk(clk),          // input
+    .addr(mux1out),         // input
+    .din(B),          // input write data
+    .mem_read(MemRead),     // input
+    .mem_write(Memwrite),    // input
+    .dout(MemData)          // output
   );
 
   // ---------- Control Unit ----------
@@ -84,41 +133,64 @@ module CPU(input reset,       // positive reset signal
   wire MemRead;
   wire Memwrite;
   wire MemtoReg;
-  
+  wire [1:0] ALUOp;
+  reg [3:0] statereg;
+  wire S3, S2, S1, S0, N3, N2, N1, N0;
+  always @(posedge clk) begin
+      statereg[0] <= N0;
+      statereg[1] <= N1;
+      statereg[2] <= N2;
+      statereg[3] <= N3;
+  end
+  assign S0 = statereg[0];
+  assign S1 = statereg[1];
+  assign S2 = statereg[2];
+  assign S3 = statereg[3];
+
+  wire is_ecall;
   ControlUnit ctrl_unit(
-    .Op(),  // input
-    .ALUsrcA(),        // output
-    .IorD(),       // output
-    .IRWrite(),        // output
-    .PCsource(),      // output
-    .PCWrite(),    // output
+    .Op(IR[6:0]),  // input
+    .ALUsrcA(ALUsrcA),        // output
+    .IorD(IorD),       // output
+    .IRWrite(IRWrite),        // output
+    .PCsource(PCsource),      // output 
+    .PCWrite(PCWrite),    // output
     .PCWriteNotCond(),     // output
-    .ALUSrcB(),       // output [1:0]
-    .RegWrite(),     // output
-    .MemRead(),     // output
-    .Memwrite(),    // output 
-    .MemtoReg()       // output 
+    .ALUSrcB(ALUSrcB),       // output [1:0]
+    .RegWrite(RegWrite),     // output
+    .MemRead(MemRead),     // output
+    .Memwrite(Memwrite),    // output 
+    .MemtoReg(MemtoReg),//output
+    .ALUOp(ALUOp),       // output 
+    .S3(S3), .S2(S2), .S1(S1), .S0(S0), .N3(N3), .N2(N2), .N1(N1), .N0(N0),
+    .is_halted(is_ecall)
   );
 
   // ---------- Immediate Generator ----------
+  wire [31:0] imm_gen_out;
   ImmediateGenerator imm_gen(
-    .part_of_inst(),  // input
-    .imm_gen_out()    // output
+    .part_of_inst(IR),  // input
+    .imm_gen_out(imm_gen_out)    // output
   );
 
   // ---------- ALU Control Unit ----------
+  wire [3:0] alu_part_of_inst,alu_op;
+  assign alu_part_of_inst = {instruction[30],instruction[14:12]};
   ALUControlUnit alu_ctrl_unit(
-    .part_of_inst(),  // input
-    .alu_op()         // output
+    .part_of_inst(alu_part_of_inst),  // input
+    .alu_op(alu_op),         // output [3:0]
+    .AluOP(ALUOp)//input [1:0]
   );
 
   // ---------- ALU ----------
+  wire [31:0] alu_result;
+  wire bcond;
   ALU alu(
-    .alu_op(),      // input
-    .alu_in_1(),    // input  
-    .alu_in_2(),    // input
-    .alu_result(),  // output
-    .alu_bcond()     // output
+    .alu_op(alu_op),      // input
+    .alu_in_1(mux2out),    // input  
+    .alu_in_2(mux4out),    // input
+    .alu_result(alu_result),  // output
+    .alu_bcond(bcond)     // output
   );
 
 endmodule
