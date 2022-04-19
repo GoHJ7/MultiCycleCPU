@@ -12,6 +12,7 @@
 `include "ImmediateGenerator.v"
 `include "Memory.v"
 `include "Mux2.v"
+`include "Mux4.v"
 `include "opcodes.v"
 `include "Pc.v"
 `include "RegisterFile.v"
@@ -22,7 +23,25 @@ module CPU(input reset,       // positive reset signal
   /***** Wire declarations *****/
   wire [31:0] next_pc;
   wire [31:0] current_pc;
-
+  wire ALUsrcA;
+  wire IorD;
+  wire IRWrite;
+  wire PCsource;
+  wire PCWrite;
+  wire PCWriteNotCond;
+  wire [1:0] ALUSrcB;
+  wire RegWrite;
+  wire MemRead;
+  wire Memwrite;
+  wire MemtoReg;
+  wire [1:0] ALUOp;
+  reg [3:0] statereg;
+  wire S3, S2, S1, S0, N3, N2, N1, N0;
+  wire [31:0] rs1_dout,rs2_dout;
+  wire [31:0] MemData;
+  wire [31:0] alu_result;
+  wire [31:0] imm_gen_out;
+  wire bcond;
   /***** Register declarations *****/
   reg [31:0] IR; // instruction register
   reg [31:0] MDR; // memory data register
@@ -37,7 +56,7 @@ module CPU(input reset,       // positive reset signal
     MDR<=32'b0;
     A<=32'b0;
     B<=32'b0;
-    ALUOUT<=32'b0;
+    ALUOut<=32'b0;
     end
     //IR
     else begin
@@ -76,14 +95,16 @@ module CPU(input reset,       // positive reset signal
     .signal(MemtoReg),
     .sig1(MDR),
     .sig0(ALUOut),
-    .out(mux3outs)
+    .out(mux3out)
   );
+  wire [31:0] mux4out;
   Mux4 mux4(
     .signal(ALUSrcB),
     .sig3(0),
     .sig2(imm_gen_out),
-    .sig1(32'b4),
-    .sig0(B)
+    .sig1(32'b100),
+    .sig0(B),
+    .out(mux4out)
   );
   Mux2 mux5(
     .signal(PCsource),
@@ -105,7 +126,7 @@ module CPU(input reset,       // positive reset signal
   );
 
   // ---------- Register File ----------
-  wire [31:0] rs1_dout,rs2_dout;
+  
   RegisterFile reg_file(
     .reset(reset),        // input
     .clk(clk),          // input
@@ -119,7 +140,7 @@ module CPU(input reset,       // positive reset signal
   );
 
   // ---------- Memory ----------
-  wire [31:0] MemData;
+  
   Memory memory(
     .reset(reset),        // input
     .clk(clk),          // input
@@ -131,20 +152,7 @@ module CPU(input reset,       // positive reset signal
   );
 
   // ---------- Control Unit ----------
-  wire ALUsrcA;
-  wire IorD;
-  wire IRWrite;
-  wire PCsource;
-  wire PCWrite;
-  wire PCWriteNotCond;
-  wire [1:0] ALUSrcB;
-  wire RegWrite;
-  wire MemRead;
-  wire Memwrite;
-  wire MemtoReg;
-  wire [1:0] ALUOp;
-  reg [3:0] statereg;
-  wire S3, S2, S1, S0, N3, N2, N1, N0;
+  
   always @(posedge clk) begin
       if(reset)begin
       statereg<=4'b0;
@@ -169,7 +177,7 @@ module CPU(input reset,       // positive reset signal
     .IRWrite(IRWrite),        // output
     .PCsource(PCsource),      // output 
     .PCWrite(PCWrite),    // output
-    .PCWriteNotCond(),     // output
+    .PCWriteNotCond(PCWriteNotCond),     // output
     .ALUSrcB(ALUSrcB),       // output [1:0]
     .RegWrite(RegWrite),     // output
     .MemRead(MemRead),     // output
@@ -182,7 +190,7 @@ module CPU(input reset,       // positive reset signal
   );
 
   // ---------- Immediate Generator ----------
-  wire [31:0] imm_gen_out;
+  
   ImmediateGenerator imm_gen(
     .part_of_inst(IR),  // input
     .imm_gen_out(imm_gen_out)    // output
@@ -190,16 +198,15 @@ module CPU(input reset,       // positive reset signal
 
   // ---------- ALU Control Unit ----------
   wire [3:0] alu_part_of_inst,alu_op;
-  assign alu_part_of_inst = {instruction[30],instruction[14:12]};
+  assign alu_part_of_inst = {IR[30],IR[14:12]};
   ALUControlUnit alu_ctrl_unit(
     .part_of_inst(alu_part_of_inst),  // input
     .alu_op(alu_op),         // output [3:0]
-    .AluOP(ALUOp)//input [1:0]
+    .ALUOp(ALUOp)//input [1:0]
   );
 
   // ---------- ALU ----------
-  wire [31:0] alu_result;
-  wire bcond;
+  
   ALU alu(
     .alu_op(alu_op),      // input
     .alu_in_1(mux2out),    // input  

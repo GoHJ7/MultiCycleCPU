@@ -4,7 +4,7 @@ module ALUControlUnit(part_of_inst,
 alu_op,
 ALUOp);
 input [3:0] part_of_inst;
-input [1:0] ALUop;
+input [1:0] ALUOp;
 output reg [3:0] alu_op;
 //wire
 wire [2:0]func3;
